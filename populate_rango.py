@@ -1,4 +1,5 @@
 import os
+import random
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE',
                       'tango_with_django_project.settings')
@@ -65,10 +66,16 @@ def populate():
             add_page(c, p['title'], p['url'],
                 views=views_dict[cat][0],likes=views_dict[cat][1])
 
-    #print out ategories added
+
+    #print out categories added
     for c in Category.objects.all():
         for p in Page.objects.filter(category=c):
                 print(f'-{c}:{p}')
+
+                # chapter 6 exercise 1
+                p.views = random.randint(0,5)
+                p.save()
+                
 
 def add_page(cat,title,url,views=0,likes=0):
     p = Page.objects.get_or_create(category=cat,title=title)[0]

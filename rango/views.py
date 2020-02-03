@@ -1,3 +1,6 @@
+from django.contrib.auth import authenticate, login, logout
+from django.contrib.auth.decorators import login_required
+
 from django.shortcuts import render
 from django.http import HttpResponse
 from django.shortcuts import redirect
@@ -55,32 +58,36 @@ def show_category(request, category_name_slug):
     # render response and return it to the client
     return render(request, 'rango/category.html', context=context_dict)
 
+@login_required
 def add_category(request):
     form = CategoryForm()
 
     if request.method == 'POST':
+        form = CategoryForm(request.POST)
+
         if form.is_valid():
             form.save(commit=True)
-
-            # possibly incorrect syntax here
-            return redirect('rango:index')#reverse('rango:index'))
+            return redirect(reverse('rango:index'))
         else:
             print(form.errors)
-    return render(request, 'rango/add_category.html', {'form':form})
+    
+    return render(request, 'rango/add_category.html', {'form': form})
 
+@login_required
 def add_page(request, category_name_slug):
-
     try:
         category = Category.objects.get(slug=category_name_slug)
     except:
         category = None
     
+    # You cannot add a page to a Category that DNE
     if category is None:
-        return redirect('rango:index')
-    
+        return redirect(reverse('rango:index'))
+
     form = PageForm()
+
     if request.method == 'POST':
-        form.PageForm(request.POST)
+        form = PageForm(request.POST)
 
         if form.is_valid():
             if category:
@@ -89,10 +96,11 @@ def add_page(request, category_name_slug):
                 page.views = 0
                 page.save()
 
-                return redirect(reverse('rango:show_category', kwargs={'category_name_slug': category_name_slug}))        
+                return redirect(reverse('rango:show_category', kwargs={'category_name_slug': category_name_slug}))
         else:
-            print(form.errors)
-    context_dict = {'form':form, 'category':category}
+            print(form.errors)  
+    
+    context_dict = {'form': form, 'category': category}
     return render(request, 'rango/add_page.html', context=context_dict)
 
 def register(request):
@@ -116,8 +124,86 @@ def register(request):
             # save the password with set_password method.
             # this creates a hash
 
-            user.set_password(uesr.password)
+            user.set_password(user.password)
             user.save()
 
             # sort out user profile instance
+            """One trick we use here that has caught many people out in the past
+             is the use of commit=False when saving the UserProfileform.
+             This stops Django from saving the data to the database in the first instance.
+             Why do this? Remember that information from the UserProfileForm form is
+            passed onto a new instance of the UserProfile model.
+            The UserProfile contains a foreign key reference to the standard 
+            Django User model – but the UserProfile does not provide this information!
+            Attempting to save the new instance in an incomplete state would raise a 
+            referential integrity error.The link between the two models is required. 
+           """
+            profile = profile_form.save(commit=False)
+            profile.user = user
+
+            # Did usr provide profile pic?
+            if 'picture' in request.FILES:
+                profile.picture = request.FILES['picture']
+
+            #save the UserProfile model instance
+            profile.save()
             
+            # Indicate that the template registration
+            # was successful
+            registered = True
+
+        else:
+            #Print errors
+            print(user_form.errors, profile_form.errors)
+    else:
+        user_form = UserForm()
+        profile_form = UserProfileForm()
+    return render(request,
+                    'rango/register.html',
+                    # the data which the webpage can interact with
+                    context = {'user_form':user_form,
+                    'profile_form': profile_form,
+                    'registered': registered})
+
+def user_login(request):
+    if request.method =='POST':
+        # Gather the username and password provided by the user. 
+        # This information is obtained from the login form. 
+        # We use request.POST.get('<variable>') as opposed 
+        # to request.POST['<variable>'], because the 
+        # request.POST.get('<variable>') returns None if the
+        # value does not exist, while request.POST['<variable>'] 
+        # will raise a KeyError exception. 
+        username = request.POST.get('username')
+        password = request.POST.get('password')
+
+        # returns a user object if deets are correct
+        user = authenticate(username=username, password=password)
+
+        if user:
+
+            #if account is active
+            if user.is_active:
+                # if the account is valid and active we can log the user in
+                # send them to the homepage
+                login(request, user)
+                return redirect(reverse('rango:index'))
+            else:
+                return HttpResponse("Your Rango account has been disabled")
+        else:
+            # Bad login details
+            print(f"Invalid Login details:{username}, {password}")
+            return HttpResponse("Invalid login details supplied.")
+    # request is not a POST
+    else:
+        return render(request, 'rango/login.html')
+
+@login_required
+def restricted(request):
+    return render(request, 'rango/restricted.html', {})
+
+@login_required
+def user_logout(request):
+    logout(request)
+    return redirect(reverse('rango:index'))
+
